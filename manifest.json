@@ -4,8 +4,10 @@
   "version": "1.0",
   "manifest_version": 3,
   "action": {
-    "default_popup": "blackboard.html",
     "default_icon": "blackboard-icon.png"
   },
-  "permissions": ["activeTab", "scripting"]
+  "permissions": ["activeTab", "scripting"],
+  "background": {
+    "service_worker": "background.js"
+  }
 }
