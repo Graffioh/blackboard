@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+    <head>
+        <title>Blackboard</title>
+        <style>
+            body {
+                margin: 0;
+                padding: 10px;
+                min-width: 320px;
+                min-height: 320px;
+            }
+            canvas {
+                background-color: #222;
+                border: 1px solid #333;
+                cursor: crosshair;
+            }
+            .controls {
+                margin-top: 10px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            button {
+                padding: 5px 10px;
+                background-color: #444;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+            }
+            button:hover {
+                background-color: #555;
+            }
+        </style>
+    </head>
+    <body>
+        <canvas id="blackboard" width="300" height="300"></canvas>
+        <div class="controls">
+            <button id="clear">Clear</button>
+        </div>
+        <script src="blackboard.js"></script>
+    </body>
+</html>
