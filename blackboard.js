@@ -7,11 +7,16 @@ chrome.action.onClicked.addListener((tab) => {
 });
 
 function injectBlackboardComplete() {
-  // If blackboard already exists, toggle its visibility
+  // Check for existing blackboard
   const existing = document.getElementById("embedded-blackboard");
   if (existing) {
-    existing.style.display =
-      existing.style.display === "none" ? "block" : "none";
+    // Don't reference any functions that might not exist yet
+    // Simply remove the element and any stored observers
+    if (window._blackboardResizeObserver) {
+      window._blackboardResizeObserver.disconnect();
+      window._blackboardResizeObserver = null;
+    }
+    existing.remove();
     return;
   }
 
@@ -435,16 +440,20 @@ function injectBlackboardComplete() {
   setTool("pen");
 
   let lastMouseX, lastMouseY;
-  canvas.addEventListener("mousemove", function (e) {
+
+  const canvasMouseMoveHandler = function (e) {
     lastMouseX = e.clientX;
     lastMouseY = e.clientY;
     updateCursor(e);
-  });
+  };
 
-  const resizeObserver = new ResizeObserver(() => {
+  canvas.addEventListener("mousemove", canvasMouseMoveHandler);
+
+  // Store the ResizeObserver in window so it can be accessed later for cleanup
+  window._blackboardResizeObserver = new ResizeObserver(() => {
     resizeCanvas();
   });
-  resizeObserver.observe(canvas.closest(".canvas-container"));
+  window._blackboardResizeObserver.observe(canvas.closest(".canvas-container"));
 
   function startDrawing(e) {
     isDrawing = true;
@@ -537,25 +546,43 @@ function injectBlackboardComplete() {
     drawingActions = [{ type: ACTION_TYPES.CLEAR }];
   });
 
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      const blackboard = document.getElementById("embedded-blackboard");
-      if (blackboard) blackboard.style.display = "none";
+  // Define cleanupBlackboard function for use within this session
+  function cleanupBlackboard() {
+    // Clean up resize observer
+    if (window._blackboardResizeObserver) {
+      window._blackboardResizeObserver.disconnect();
+      window._blackboardResizeObserver = null;
     }
-  });
 
-  document.addEventListener("mousemove", function (e) {
+    // Remove the blackboard element from the DOM
+    const blackboard = document.getElementById("embedded-blackboard");
+    if (blackboard) blackboard.remove();
+  }
+
+  // Handle Escape key to completely remove blackboard
+  const handleEscapeKey = (e) => {
+    if (e.key === "Escape") {
+      cleanupBlackboard();
+    }
+  };
+  document.addEventListener("keydown", handleEscapeKey);
+
+  // Create handlers for global events
+  const globalMouseMoveHandler = function (e) {
     if (currentTool === "eraser") {
       updateCursor(e);
     }
-  });
+  };
 
-  document.addEventListener("mouseout", function () {
+  const globalMouseOutHandler = function () {
     cursorOverlay.style.display = "none";
-  });
+  };
 
-  // Close button functionality
+  document.addEventListener("mousemove", globalMouseMoveHandler);
+  document.addEventListener("mouseout", globalMouseOutHandler);
+
+  // Close button functionality - now completely removes the blackboard
   document.getElementById("close-blackboard").addEventListener("click", () => {
-    blackboardContainer.style.display = "none";
+    cleanupBlackboard();
   });
 }
