@@ -279,6 +279,10 @@ function injectBlackboardComplete() {
   let drawingActions = [];
   let currentTool = "pen";
 
+  // Add history arrays for undo/redo
+  let undoStack = [];
+  let redoStack = [];
+
   const DEFAULT_PEN_SIZE = 4;
   const DEFAULT_ERASER_SIZE = 12;
 
@@ -436,6 +440,40 @@ function injectBlackboardComplete() {
     }
   }
 
+  /**
+   * Undos the last drawing action by restoring the previous state, if available.
+   */
+  function undo() {
+    if (drawingActions.length === 0) return;
+
+    // Save current state to redo stack
+    redoStack.push([...drawingActions]);
+
+    // Get previous state from undo stack or clear if none
+    if (undoStack.length > 0) {
+      drawingActions = undoStack.pop();
+    } else {
+      drawingActions = [];
+    }
+
+    redrawCanvas();
+  }
+
+  /**
+   * Redos the last undone drawing action by restoring the next state, if available.
+   */
+  function redo() {
+    if (redoStack.length === 0) return;
+
+    // Save current state to undo stack
+    undoStack.push([...drawingActions]);
+
+    // Get next state from redo stack
+    drawingActions = redoStack.pop();
+
+    redrawCanvas();
+  }
+
   resizeCanvas();
   setTool("pen");
 
@@ -457,6 +495,11 @@ function injectBlackboardComplete() {
 
   function startDrawing(e) {
     isDrawing = true;
+
+    // Save current state to undo stack before starting new drawing
+    undoStack.push([...drawingActions]);
+    // Clear redo stack when new drawing starts
+    redoStack = [];
 
     const rect = canvas.getBoundingClientRect();
     lastX = e.clientX - rect.left;
@@ -540,6 +583,10 @@ function injectBlackboardComplete() {
   resetSizeButton.addEventListener("click", resetToDefaultSizes);
 
   document.getElementById("clear").addEventListener("click", function () {
+    // Save current state to undo stack before clearing
+    undoStack.push([...drawingActions]);
+    redoStack = [];
+
     ctx.fillStyle = "#222";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     updateDrawingSettings();
@@ -559,13 +606,27 @@ function injectBlackboardComplete() {
     if (blackboard) blackboard.remove();
   }
 
-  // Handle Escape key to completely remove blackboard
-  const handleEscapeKey = (e) => {
-    if (e.key === "Escape") {
-      cleanupBlackboard();
+  // Handle keyboard shortcuts for undo/redo
+  const handleKeyboardShortcuts = (e) => {
+    // Handle Undo: Cmd+Z (Mac) or Ctrl+Z (Windows/Linux)
+    if ((e.metaKey || e.ctrlKey) && e.key === "z" && !e.shiftKey) {
+      e.preventDefault();
+      undo();
+      return;
+    }
+
+    // Handle Redo: Cmd+Y (Mac) or Ctrl+Y (Windows/Linux) or Cmd+Shift+Z
+    if (
+      (e.metaKey || e.ctrlKey) &&
+      (e.key === "y" || (e.key === "z" && e.shiftKey))
+    ) {
+      e.preventDefault();
+      redo();
+      return;
     }
   };
-  document.addEventListener("keydown", handleEscapeKey);
+
+  document.addEventListener("keydown", handleKeyboardShortcuts);
 
   // Create handlers for global events
   const globalMouseMoveHandler = function (e) {
