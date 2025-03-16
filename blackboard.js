@@ -282,13 +282,18 @@ function injectBlackboardComplete() {
   // Add history arrays for undo/redo
   let undoStack = [];
   let redoStack = [];
-
+  
   const DEFAULT_PEN_SIZE = 4;
   const DEFAULT_ERASER_SIZE = 12;
-
+  
   let penSize = DEFAULT_PEN_SIZE;
   let eraserSize = DEFAULT_ERASER_SIZE;
   let lineSize = penSize;
+
+  // Track the previous state before each drawing action
+  let previousPenSize = DEFAULT_PEN_SIZE;
+  let previousEraserSize = DEFAULT_ERASER_SIZE;
+  let previousTool = "pen";
 
   let lastX, lastY;
 
@@ -308,9 +313,6 @@ function injectBlackboardComplete() {
     const container = canvas.closest(".canvas-container");
     const containerWidth = container.clientWidth;
     const containerHeight = container.clientHeight;
-
-    const prevWidth = canvas.width;
-    const prevHeight = canvas.height;
 
     canvas.width = containerWidth;
     canvas.height = containerHeight;
@@ -445,17 +447,36 @@ function injectBlackboardComplete() {
    */
   function undo() {
     if (drawingActions.length === 0) return;
-
-    // Save current state to redo stack
-    redoStack.push([...drawingActions]);
-
+  
+    // Save current state to redo stack before making any changes
+    redoStack.push({
+      actions: [...drawingActions],
+      penSize: penSize,
+      eraserSize: eraserSize,
+      currentTool: currentTool
+    });
+  
     // Get previous state from undo stack or clear if none
     if (undoStack.length > 0) {
-      drawingActions = undoStack.pop();
+      const previousState = undoStack.pop();
+      drawingActions = previousState.actions;
+      
+      // Restore the tool sizes and current tool
+      penSize = previousState.penSize;
+      eraserSize = previousState.eraserSize;
+      
+      // Set the current tool directly without calling setTool
+      currentTool = previousState.currentTool;
+      penButton.classList.toggle("active", currentTool === "pen");
+      eraserButton.classList.toggle("active", currentTool === "eraser");
+      console.log(penSize, eraserSize)
+      
+      // Update drawing settings after changing the tool and sizes
+      updateDrawingSettings();
     } else {
       drawingActions = [];
     }
-
+  
     redrawCanvas();
   }
 
@@ -464,13 +485,33 @@ function injectBlackboardComplete() {
    */
   function redo() {
     if (redoStack.length === 0) return;
-
-    // Save current state to undo stack
-    undoStack.push([...drawingActions]);
-
+  
     // Get next state from redo stack
-    drawingActions = redoStack.pop();
-
+    const nextState = redoStack.pop();
+    
+    // Save current state to undo stack before making any changes
+    undoStack.push({
+      actions: [...drawingActions],
+      penSize: penSize,
+      eraserSize: eraserSize,
+      currentTool: currentTool
+    });
+  
+    // Apply the state from redo stack
+    drawingActions = nextState.actions;
+    
+    // Restore the tool sizes and current tool
+    penSize = nextState.penSize;
+    eraserSize = nextState.eraserSize;
+    
+    // Set the current tool directly without calling setTool
+    currentTool = nextState.currentTool;
+    penButton.classList.toggle("active", currentTool === "pen");
+    eraserButton.classList.toggle("active", currentTool === "eraser");
+    
+    // Update drawing settings after changing the tool and sizes
+    updateDrawingSettings();
+  
     redrawCanvas();
   }
 
@@ -496,8 +537,20 @@ function injectBlackboardComplete() {
   function startDrawing(e) {
     isDrawing = true;
 
-    // Save current state to undo stack before starting new drawing
-    undoStack.push([...drawingActions]);
+    // Save current state to undo stack before starting new drawing, note that we save also the previous tools and sizes
+    // to be able to correctly undo/redo the changes
+    undoStack.push({
+      actions: [...drawingActions],
+      penSize: previousPenSize,
+      eraserSize: previousEraserSize,
+      currentTool: previousTool
+    });
+    
+    // Update previous values to current values for next drawing action
+    previousPenSize = penSize;
+    previousEraserSize = eraserSize;
+    previousTool = currentTool;
+    
     // Clear redo stack when new drawing starts
     redoStack = [];
 
@@ -559,12 +612,19 @@ function injectBlackboardComplete() {
   canvas.addEventListener("mouseup", stopDrawing);
   canvas.addEventListener("mouseout", stopDrawing);
 
-  penButton.addEventListener("click", () => setTool("pen"));
-  eraserButton.addEventListener("click", () => setTool("eraser"));
+  penButton.addEventListener("click", () => {
+    previousTool = currentTool;
+    setTool("pen");
+  });
+  
+  eraserButton.addEventListener("click", () => {
+    previousTool = currentTool;
+    setTool("eraser");
+  });
 
   sizeSlider.addEventListener("input", function () {
     const newSize = parseInt(this.value);
-
+  
     if (currentTool === "pen") {
       penSize = newSize;
     } else {
@@ -580,11 +640,15 @@ function injectBlackboardComplete() {
     }
   });
 
-  resetSizeButton.addEventListener("click", resetToDefaultSizes);
+  resetSizeButton.addEventListener("click", () => {
+    previousPenSize = penSize;
+    previousEraserSize = eraserSize;
+    resetToDefaultSizes();
+  });
 
   document.getElementById("clear").addEventListener("click", function () {
     // Save current state to undo stack before clearing
-    undoStack.push([...drawingActions]);
+    undoStack = [];
     redoStack = [];
 
     ctx.fillStyle = "#222";
@@ -653,4 +717,9 @@ function injectBlackboardComplete() {
   document.getElementById("close-blackboard").addEventListener("click", () => {
     cleanupBlackboard();
   });
+
+  // Initialize previous values, used for undo/redo
+  previousPenSize = penSize;
+  previousEraserSize = eraserSize;
+  previousTool = currentTool;
 }
