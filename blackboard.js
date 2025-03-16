@@ -608,6 +608,13 @@ function injectBlackboardComplete() {
 
   // Handle keyboard shortcuts for undo/redo
   const handleKeyboardShortcuts = (e) => {
+    // Handle Escape key to close the blackboard
+    if (e.key === "Escape") {
+      e.preventDefault();
+      cleanupBlackboard();
+      return;
+    }
+
     // Handle Undo: Cmd+Z (Mac) or Ctrl+Z (Windows/Linux)
     if ((e.metaKey || e.ctrlKey) && e.key === "z" && !e.shiftKey) {
       e.preventDefault();
