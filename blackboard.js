@@ -279,12 +279,21 @@ function injectBlackboardComplete() {
   let drawingActions = [];
   let currentTool = "pen";
 
+  // Add history arrays for undo/redo
+  let undoStack = [];
+  let redoStack = [];
+  
   const DEFAULT_PEN_SIZE = 4;
   const DEFAULT_ERASER_SIZE = 12;
-
+  
   let penSize = DEFAULT_PEN_SIZE;
   let eraserSize = DEFAULT_ERASER_SIZE;
   let lineSize = penSize;
+
+  // Track the previous state before each drawing action
+  let previousPenSize = DEFAULT_PEN_SIZE;
+  let previousEraserSize = DEFAULT_ERASER_SIZE;
+  let previousTool = "pen";
 
   let lastX, lastY;
 
@@ -304,9 +313,6 @@ function injectBlackboardComplete() {
     const container = canvas.closest(".canvas-container");
     const containerWidth = container.clientWidth;
     const containerHeight = container.clientHeight;
-
-    const prevWidth = canvas.width;
-    const prevHeight = canvas.height;
 
     canvas.width = containerWidth;
     canvas.height = containerHeight;
@@ -436,6 +442,79 @@ function injectBlackboardComplete() {
     }
   }
 
+  /**
+   * Undos the last drawing action by restoring the previous state, if available.
+   */
+  function undo() {
+    if (drawingActions.length === 0) return;
+  
+    // Save current state to redo stack before making any changes
+    redoStack.push({
+      actions: [...drawingActions],
+      penSize: penSize,
+      eraserSize: eraserSize,
+      currentTool: currentTool
+    });
+  
+    // Get previous state from undo stack or clear if none
+    if (undoStack.length > 0) {
+      const previousState = undoStack.pop();
+      drawingActions = previousState.actions;
+      
+      // Restore the tool sizes and current tool
+      penSize = previousState.penSize;
+      eraserSize = previousState.eraserSize;
+      
+      // Set the current tool directly without calling setTool
+      currentTool = previousState.currentTool;
+      penButton.classList.toggle("active", currentTool === "pen");
+      eraserButton.classList.toggle("active", currentTool === "eraser");
+      console.log(penSize, eraserSize)
+      
+      // Update drawing settings after changing the tool and sizes
+      updateDrawingSettings();
+    } else {
+      drawingActions = [];
+    }
+  
+    redrawCanvas();
+  }
+
+  /**
+   * Redos the last undone drawing action by restoring the next state, if available.
+   */
+  function redo() {
+    if (redoStack.length === 0) return;
+  
+    // Get next state from redo stack
+    const nextState = redoStack.pop();
+    
+    // Save current state to undo stack before making any changes
+    undoStack.push({
+      actions: [...drawingActions],
+      penSize: penSize,
+      eraserSize: eraserSize,
+      currentTool: currentTool
+    });
+  
+    // Apply the state from redo stack
+    drawingActions = nextState.actions;
+    
+    // Restore the tool sizes and current tool
+    penSize = nextState.penSize;
+    eraserSize = nextState.eraserSize;
+    
+    // Set the current tool directly without calling setTool
+    currentTool = nextState.currentTool;
+    penButton.classList.toggle("active", currentTool === "pen");
+    eraserButton.classList.toggle("active", currentTool === "eraser");
+    
+    // Update drawing settings after changing the tool and sizes
+    updateDrawingSettings();
+  
+    redrawCanvas();
+  }
+
   resizeCanvas();
   setTool("pen");
 
@@ -457,6 +536,23 @@ function injectBlackboardComplete() {
 
   function startDrawing(e) {
     isDrawing = true;
+
+    // Save current state to undo stack before starting new drawing, note that we save also the previous tools and sizes
+    // to be able to correctly undo/redo the changes
+    undoStack.push({
+      actions: [...drawingActions],
+      penSize: previousPenSize,
+      eraserSize: previousEraserSize,
+      currentTool: previousTool
+    });
+    
+    // Update previous values to current values for next drawing action
+    previousPenSize = penSize;
+    previousEraserSize = eraserSize;
+    previousTool = currentTool;
+    
+    // Clear redo stack when new drawing starts
+    redoStack = [];
 
     const rect = canvas.getBoundingClientRect();
     lastX = e.clientX - rect.left;
@@ -516,12 +612,19 @@ function injectBlackboardComplete() {
   canvas.addEventListener("mouseup", stopDrawing);
   canvas.addEventListener("mouseout", stopDrawing);
 
-  penButton.addEventListener("click", () => setTool("pen"));
-  eraserButton.addEventListener("click", () => setTool("eraser"));
+  penButton.addEventListener("click", () => {
+    previousTool = currentTool;
+    setTool("pen");
+  });
+  
+  eraserButton.addEventListener("click", () => {
+    previousTool = currentTool;
+    setTool("eraser");
+  });
 
   sizeSlider.addEventListener("input", function () {
     const newSize = parseInt(this.value);
-
+  
     if (currentTool === "pen") {
       penSize = newSize;
     } else {
@@ -537,9 +640,17 @@ function injectBlackboardComplete() {
     }
   });
 
-  resetSizeButton.addEventListener("click", resetToDefaultSizes);
+  resetSizeButton.addEventListener("click", () => {
+    previousPenSize = penSize;
+    previousEraserSize = eraserSize;
+    resetToDefaultSizes();
+  });
 
   document.getElementById("clear").addEventListener("click", function () {
+    // Save current state to undo stack before clearing
+    undoStack = [];
+    redoStack = [];
+
     ctx.fillStyle = "#222";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     updateDrawingSettings();
@@ -559,13 +670,34 @@ function injectBlackboardComplete() {
     if (blackboard) blackboard.remove();
   }
 
-  // Handle Escape key to completely remove blackboard
-  const handleEscapeKey = (e) => {
+  // Handle keyboard shortcuts for undo/redo
+  const handleKeyboardShortcuts = (e) => {
+    // Handle Escape key to close the blackboard
     if (e.key === "Escape") {
+      e.preventDefault();
       cleanupBlackboard();
+      return;
+    }
+
+    // Handle Undo: Cmd+Z (Mac) or Ctrl+Z (Windows/Linux)
+    if ((e.metaKey || e.ctrlKey) && e.key === "z" && !e.shiftKey) {
+      e.preventDefault();
+      undo();
+      return;
+    }
+
+    // Handle Redo: Cmd+Y (Mac) or Ctrl+Y (Windows/Linux) or Cmd+Shift+Z
+    if (
+      (e.metaKey || e.ctrlKey) &&
+      (e.key === "y" || (e.key === "z" && e.shiftKey))
+    ) {
+      e.preventDefault();
+      redo();
+      return;
     }
   };
-  document.addEventListener("keydown", handleEscapeKey);
+
+  document.addEventListener("keydown", handleKeyboardShortcuts);
 
   // Create handlers for global events
   const globalMouseMoveHandler = function (e) {
@@ -585,4 +717,9 @@ function injectBlackboardComplete() {
   document.getElementById("close-blackboard").addEventListener("click", () => {
     cleanupBlackboard();
   });
+
+  // Initialize previous values, used for undo/redo
+  previousPenSize = penSize;
+  previousEraserSize = eraserSize;
+  previousTool = currentTool;
 }
